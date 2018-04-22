@@ -474,7 +474,7 @@ fun List<CollectedConfiguration>.collectDependencies(): List<DependencyInfo> {
         existing += data
 
         for (child in info.dependency.children) {
-            if (child.moduleGroup != "org.jetbrains.kotlin" && Pair(info.scope, child) in existing) {
+            if (Pair(info.scope, child) in existing) {
                 continue
             }
 
