@@ -34,6 +34,13 @@ dependencies {
         includeJars("openapi", "idea", "idea_rt", "guava", "trove4j", "picocontainer", "asm-all", "log4j", "jdom", "annotations", rootProject = rootProject)
         isTransitive = false
     }
+
+    bunched(Bunch.`181+`) {
+        testCompile(intellijDep()) {
+            includeJars("platform-api", "platform-impl", "bootstrap")
+            isTransitive = false
+        }
+    }
 }
 
 sourceSets {

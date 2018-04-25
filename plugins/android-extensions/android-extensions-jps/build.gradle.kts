@@ -11,6 +11,11 @@ dependencies {
     compile(project(":jps-plugin"))
     compile(project(":plugins:android-extensions-compiler"))
     compileOnly(intellijDep()) { includeJars("openapi", "jps-builders", "jps-model", "jdom") }
+
+    bunched(Bunch.`181+`) {
+        compileOnly(intellijDep()) { includeJars("platform-api") }
+    }
+
     compileOnly(intellijPluginDep("android")) { includeJars("jps/android-jps-plugin") }
     compile(intellijPluginDep("android")) { includeJars("jps/android-jps-plugin") }
 
@@ -24,6 +29,11 @@ dependencies {
     testCompileOnly(intellijDep()) { includeJars("jps-model") }
 
     testRuntime(intellijPluginDep("android"))
+
+    bunched(Bunch.IJ_18x, Bunch.AS) {
+        testRuntime(intellijPluginDep("smali"))
+    }
+
     testRuntime(intellijDep("jps-build-test"))
     testRuntime(intellijDep("jps-standalone"))
 }

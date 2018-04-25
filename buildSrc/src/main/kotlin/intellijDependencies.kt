@@ -107,12 +107,6 @@ fun Project.intellijUltimateRootDir() =
         else
             throw GradleException("intellij ultimate SDK is not available")
 
-fun DependencyHandlerScope.excludeInAndroidStudio(rootProject: Project, block: DependencyHandlerScope.() -> Unit) {
-    if (!rootProject.extra.has("versions.androidStudioRelease")) {
-        block()
-    }
-}
-
 fun Project.runIdeTask(name: String, ideaPluginDir: File, ideaSandboxDir: File, body: JavaExec.() -> Unit): JavaExec {
 
     return task<JavaExec>(name) {

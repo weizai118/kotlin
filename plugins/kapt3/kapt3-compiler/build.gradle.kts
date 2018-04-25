@@ -11,6 +11,10 @@ dependencies {
     testRuntime(intellijDep())
     testCompileOnly(intellijDep()) { includeJars("idea", "idea_rt", "openapi") }
 
+    bunched(Bunch.`181+`) {
+        testCompileOnly(intellijDep()) { includeJars("platform-api", "platform-impl") }
+    }
+
     compile(project(":compiler:util"))
     compile(project(":compiler:cli"))
     compile(project(":compiler:backend"))

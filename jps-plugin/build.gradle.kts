@@ -16,6 +16,11 @@ dependencies {
     compile(projectRuntimeJar(":kotlin-preloader"))
     compile(project(":idea:idea-jps-common"))
     compileOnly(intellijDep()) { includeJars("jdom", "trove4j", "jps-model", "openapi", "util", "asm-all") }
+
+    bunched(Bunch.`181+`) {
+        compileOnly(intellijDep()) { includeJars("platform-api") }
+    }
+
     compileOnly(intellijDep("jps-standalone")) { includeJars("jps-builders", "jps-builders-6") }
     testCompileOnly(project(":kotlin-reflect-api"))
     testCompile(project(":compiler:incremental-compilation-impl"))
@@ -25,7 +30,13 @@ dependencies {
     testCompile(projectDist(":kotlin-test:kotlin-test-jvm"))
     testCompile(projectTests(":kotlin-build-common"))
     testCompileOnly(intellijDep("jps-standalone")) { includeJars("jps-builders", "jps-builders-6") }
+
     testCompileOnly(intellijDep()) { includeJars("openapi", "idea", "log4j") }
+
+    bunched(Bunch.`181+`) {
+        testCompileOnly(intellijDep()) { includeJars("platform-api") }
+    }
+
     testCompile(intellijDep("jps-build-test"))
     compilerModules.forEach {
         testRuntime(project(it))
@@ -36,11 +47,7 @@ dependencies {
 
 sourceSets {
     "main" { projectDefault() }
-    "test" {
-        java.srcDirs("jps-tests/test"
-                     /*, "kannotator-jps-plugin-test/test"*/ // Obsolete
-        )
-    }
+    "test" { bunched(Bunch.IJ) { java.srcDirs("jps-tests/test") } }
 }
 
 projectTest {

@@ -44,8 +44,16 @@ dependencies {
     testRuntime(intellijPluginDep("gradle"))
     testRuntime(intellijPluginDep("Groovy"))
     testRuntime(intellijPluginDep("coverage"))
-    testRuntime(intellijPluginDep("maven"))
+
+    bunched(Bunch.IJ) {
+        testRuntime(intellijPluginDep("maven"))
+    }
+
     testRuntime(intellijPluginDep("android"))
+
+    bunched(Bunch.IJ_18x, Bunch.AS) {
+        testRuntime(intellijPluginDep("smali"))
+    }
 }
 
 sourceSets {

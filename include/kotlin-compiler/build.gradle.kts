@@ -30,6 +30,12 @@ dependencies {
     fatJarContents(intellijDep()) { includeJars("jna-platform") }
     fatJarContentsStripServices(intellijDep("jps-standalone")) { includeJars("jps-model") }
     fatJarContentsStripMetadata(intellijDep()) { includeJars("oromatcher", "jdom", "log4j") }
+
+    bunched(Bunch.`181+`) {
+        fatJarContentsStripMetadata(intellijDep()) { includeJars("oro", rootProject = rootProject) }
+    } ?: run {
+        fatJarContentsStripMetadata(intellijDep()) { includeJars("oromatcher") }
+    }
 }
 
 val jar: Jar by tasks

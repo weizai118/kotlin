@@ -20,6 +20,14 @@ dependencies {
     testCompile(projectDist(":kotlin-test:kotlin-test-junit"))
     testCompile(commonDep("junit:junit"))
 
+    bunched(Bunch.AS_32) {
+        testCompileOnly(intellijDep()) { includeJars("idea") }
+    }
+
+    bunched(Bunch.`181+`) {
+        testCompileOnly(intellijDep()) { includeJars("platform-api", "platform-impl") }
+    }
+
     testRuntime(project(":plugins:kapt3-idea")) { isTransitive = false }
     testRuntime(project(":idea:idea-jvm"))
     testRuntime(project(":idea:idea-android"))
@@ -31,8 +39,17 @@ dependencies {
     testRuntime(intellijPluginDep("gradle"))
     testRuntime(intellijPluginDep("Groovy"))
     testRuntime(intellijPluginDep("coverage"))
-    testRuntime(intellijPluginDep("maven"))
+
+    bunched(Bunch.IJ) {
+        testRuntime(intellijPluginDep("maven"))
+    }
+
     testRuntime(intellijPluginDep("android"))
+
+    bunched(Bunch.IJ_18x, Bunch.AS) {
+        testRuntime(intellijPluginDep("smali"))
+    }
+
     testRuntime(intellijPluginDep("junit"))
     testRuntime(intellijPluginDep("testng"))
     testRuntime(intellijPluginDep("IntelliLang"))

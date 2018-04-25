@@ -22,6 +22,8 @@ else
 val platform = androidStudioVersion?.let { "AS" + it }
         ?: extra["versions.intellijSdk"].toString().substringBefore('.')
 
+extra["versions.platform"] = platform
+
 when (platform) {
     "181" -> {
         extra["versions.jar.guava"] = "21.0"

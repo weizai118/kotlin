@@ -18,6 +18,10 @@ dependencies {
     compileOnly(project(":kotlin-reflect-api"))
     compileOnly(commonDep("net.rubygrapefruit", "native-platform"))
 
+    bunched(Bunch.IJ_18x) {
+        compileOnly(intellijDep()) { includeIntellijCoreJarDependencies(project) }
+    }
+
     embeddedComponents(project(":compiler:daemon-common")) { isTransitive = false }
     embeddedComponents(commonDep("net.rubygrapefruit", "native-platform"))
     nativePlatformVariants.forEach {

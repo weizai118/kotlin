@@ -19,6 +19,10 @@ dependencies {
     compile(project(":idea"))
     compile(project(":idea:idea-jvm"))
     compile(intellijDep()) { includeJars("openapi", "extensions", "util") }
+
+    bunched(Bunch.IJ_18x) {
+        compile(intellijDep()) { includeJars("platform-api") }
+    }
 }
 
 sourceSets {

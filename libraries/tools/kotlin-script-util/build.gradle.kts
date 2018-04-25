@@ -25,6 +25,10 @@ dependencies {
     testRuntime("org.apache.maven:maven-core:3.0.3")
     compileOnly(intellijDep()) { includeJars("openapi", "util") }
     testCompile(intellijDep()) { includeJars("openapi", "util") }
+
+    bunched(Bunch.`181+`) {
+        testCompile(intellijDep()) { includeJars("platform-api") }
+    }
 }
 
 projectTest {

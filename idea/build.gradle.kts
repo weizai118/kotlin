@@ -87,14 +87,26 @@ dependencies {
     testCompileOnly(commonDep("com.google.code.findbugs", "jsr305"))
     testCompileOnly(intellijPluginDep("gradle"))
     testCompileOnly(intellijPluginDep("Groovy"))
-    testCompileOnly(intellijPluginDep("maven"))
+
+    bunched(Bunch.IJ) {
+        testCompileOnly(intellijPluginDep("maven"))
+    }
 
     testRuntime(intellijPluginDep("junit"))
     testRuntime(intellijPluginDep("gradle"))
     testRuntime(intellijPluginDep("Groovy"))
     testRuntime(intellijPluginDep("coverage"))
-    testRuntime(intellijPluginDep("maven"))
+
+    bunched(Bunch.IJ) {
+        testRuntime(intellijPluginDep("maven"))
+    }
+
     testRuntime(intellijPluginDep("android"))
+
+    bunched(Bunch.IJ_18x, Bunch.AS) {
+        testRuntime(intellijPluginDep("smali"))
+    }
+
     testRuntime(intellijPluginDep("testng"))
 }
 

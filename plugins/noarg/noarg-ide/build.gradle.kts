@@ -19,7 +19,11 @@ dependencies {
     compile(project(":idea:idea-jps-common"))
     compile(project(":plugins:annotation-based-compiler-plugins-ide-support"))
     compileOnly(intellijDep())
-    excludeInAndroidStudio(rootProject) { compileOnly(intellijPluginDep("maven")) }
+
+    bunched(Bunch.IJ) {
+        compileOnly(intellijPluginDep("maven"))
+    }
+
     compileOnly(intellijPluginDep("gradle"))
 }
 

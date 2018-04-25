@@ -19,14 +19,20 @@ dependencies {
     compile(project(":idea:idea-jps-common"))
 
     compileOnly(intellijDep())
-    excludeInAndroidStudio(rootProject) { compileOnly(intellijPluginDep("maven")) }
+
+    bunched(Bunch.IJ) {
+        compileOnly(intellijPluginDep("maven"))
+    }
 
     testCompile(projectTests(":idea"))
     testCompile(projectTests(":compiler:tests-common"))
     testCompile(projectTests(":idea:idea-test-framework"))
 
     testCompileOnly(intellijDep())
-    testCompileOnly(intellijPluginDep("maven"))
+
+    bunched(Bunch.IJ) {
+        testCompileOnly(intellijPluginDep("maven"))
+    }
 
     testRuntime(projectDist(":kotlin-reflect"))
     testRuntime(project(":idea:idea-jvm"))
@@ -45,13 +51,21 @@ dependencies {
     testRuntime(intellijPluginDep("gradle"))
     testRuntime(intellijPluginDep("Groovy"))
     testRuntime(intellijPluginDep("coverage"))
-    testRuntime(intellijPluginDep("maven"))
+
+    bunched(Bunch.IJ) {
+        testRuntime(intellijPluginDep("maven"))
+    }
+
     testRuntime(intellijPluginDep("android"))
+
+    bunched(Bunch.IJ_18x, Bunch.AS) {
+        testRuntime(intellijPluginDep("smali"))
+    }
 }
 
 sourceSets {
-    "main" { projectDefault() }
-    "test" { projectDefault() }
+    "main" { bunched(Bunch.IJ) { projectDefault() } }
+    "test" { bunched(Bunch.IJ) { projectDefault() } }
 }
 
 testsJar()

@@ -14,6 +14,10 @@ dependencies {
     compile(project(":idea:idea-core"))
     compileOnly(intellijDep()) { includeJars("openapi", "idea", "util", "extensions", "asm-all") }
 
+    bunched(Bunch.IJ_18x) {
+        compileOnly(intellijDep()) { includeJars("java-api", "java-impl", "platform-api", "platform-impl") }
+    }
+
     testCompile(projectDist(":kotlin-test:kotlin-test-jvm"))
     testCompile(projectTests(":compiler:tests-common"))
     testCompile(commonDep("junit:junit"))
@@ -21,6 +25,10 @@ dependencies {
     testCompile(project(":compiler:cli"))
     testCompile(projectTests(":idea:idea-test-framework"))
     testCompileOnly(intellijDep()) { includeJars("idea_rt") }
+
+    bunched(Bunch.IJ_18x) {
+        testCompileOnly(intellijDep()) { includeJars("java-api", "java-impl") }
+    }
 
     testRuntime(projectDist(":kotlin-reflect"))
     testRuntime(project(":idea:idea-android"))
