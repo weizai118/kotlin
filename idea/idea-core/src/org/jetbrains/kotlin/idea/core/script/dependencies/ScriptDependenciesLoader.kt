@@ -75,7 +75,7 @@ abstract class ScriptDependenciesLoader(
 
         val newDependencies = result.dependencies?.adjustByDefinition(scriptDef) ?: return
         if (cache[file] != newDependencies) {
-            if (shouldShowNotification() && !ApplicationManager.getApplication().isUnitTestMode) {
+            if (shouldShowNotification() && !ApplicationManager.getApplication().isUnitTestMode && cache[file] == null) {
                 file.addScriptDependenciesNotificationPanel(newDependencies, project) {
                     saveDependencies(newDependencies)
                 }
