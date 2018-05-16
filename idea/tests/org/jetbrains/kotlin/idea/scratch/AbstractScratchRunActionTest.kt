@@ -25,6 +25,7 @@ import com.intellij.openapi.roots.CompilerModuleExtension
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.testFramework.FileEditorManagerTestCase
@@ -132,7 +133,7 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
                 .filterIsInstance<InlayScratchFileRenderer>()
                 .forEach {
                     val str = it.toString()
-                    val offset = doc.getLineEndOffset(line); actualOutput.insert(offset, "    // $str")
+                    val offset = doc.getLineEndOffset(line); actualOutput.insert(offset, "${str.takeWhile { it.isWhitespace() }}// ${str.trim()}")
                 }
         }
 
