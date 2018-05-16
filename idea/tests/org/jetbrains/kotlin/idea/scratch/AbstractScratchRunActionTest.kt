@@ -166,6 +166,7 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
     override fun setUp() {
         super.setUp()
 
+        VfsRootAccess.allowRootAccess("C:/Work/Projects/kotlin/dist")
         PluginTestCaseBase.addJdk(myFixture.projectDisposableEx) { PluginTestCaseBase.fullJdk() }
     }
 
