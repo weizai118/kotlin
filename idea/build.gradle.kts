@@ -155,7 +155,7 @@ projectTest(taskName = "performanceTest") {
     jvmArgs.removeAll { it.startsWith("-Xmx") }
 
     maxHeapSize = "3g"
-    jvmArgs("-XX:SoftRefLRUPolicyMSPerMB=50")
+    jvmArgs("-XX:SoftRefLRUPolicyMSPerMB=50", "-XX:ReservedCodeCacheSize=240m", "-XX:+UseConcMarkSweepGC")
 
     doFirst {
         systemProperty("idea.home.path", intellijRootDir().canonicalPath)
