@@ -376,6 +376,13 @@ class KotlinQuickDocumentationProvider : AbstractDocumentationProvider() {
                 if (!fqName.isRoot) {
                     DocumentationManagerUtil.createHyperlink(this, fqName.asString(), fqName.asString(), false)
                 }
+                if (containingDeclaration is PackageFragmentDescriptor && descriptor is DeclarationDescriptorWithSource) {
+                    append("(")
+                    append(descriptor.source.containingFile.name)
+                    append(")")
+                }
+
+                append("<br>")
             }
 
             append(renderer.render(descriptor))
