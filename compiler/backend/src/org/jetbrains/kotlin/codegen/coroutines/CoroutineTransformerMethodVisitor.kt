@@ -17,6 +17,7 @@ import org.jetbrains.kotlin.codegen.optimization.fixStack.FixStackMethodTransfor
 import org.jetbrains.kotlin.codegen.optimization.fixStack.top
 import org.jetbrains.kotlin.codegen.optimization.transformer.MethodTransformer
 import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.config.isReleaseCoroutines
 import org.jetbrains.kotlin.resolve.jvm.AsmTypes
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin
 import org.jetbrains.kotlin.utils.sure
@@ -161,7 +162,7 @@ class CoroutineTransformerMethodVisitor(
     }
 
     private fun createInsnForReadingLabel() =
-        if (isForNamedFunction)
+        if (isForNamedFunction && !languageVersionSettings.isReleaseCoroutines())
             MethodInsnNode(
                 Opcodes.INVOKEVIRTUAL,
                 classBuilderForCoroutineState.thisName,
@@ -172,12 +173,12 @@ class CoroutineTransformerMethodVisitor(
         else
             FieldInsnNode(
                 Opcodes.GETFIELD,
-                languageVersionSettings.coroutineImplAsmType().internalName,
+                computeLabelOwner(languageVersionSettings, classBuilderForCoroutineState.thisName).internalName,
                 COROUTINE_LABEL_FIELD_NAME, Type.INT_TYPE.descriptor
             )
 
     private fun createInsnForSettingLabel() =
-        if (isForNamedFunction)
+        if (isForNamedFunction && !languageVersionSettings.isReleaseCoroutines())
             MethodInsnNode(
                 Opcodes.INVOKEVIRTUAL,
                 classBuilderForCoroutineState.thisName,
@@ -188,7 +189,7 @@ class CoroutineTransformerMethodVisitor(
         else
             FieldInsnNode(
                 Opcodes.PUTFIELD,
-                languageVersionSettings.coroutineImplAsmType().internalName,
+                computeLabelOwner(languageVersionSettings, classBuilderForCoroutineState.thisName).internalName,
                 COROUTINE_LABEL_FIELD_NAME, Type.INT_TYPE.descriptor
             )
 
