@@ -19,6 +19,7 @@ package org.jetbrains.kotlin.serialization.js
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.metadata.ProtoBuf
 import org.jetbrains.kotlin.metadata.js.JsProtoBuf
+import org.jetbrains.kotlin.metadata.serialization.MutableVersionRequirementTable
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.protobuf.ExtensionRegistryLite
@@ -38,12 +39,16 @@ class KotlinJavascriptSerializerExtension(
         lowerProto.flexibleTypeCapabilitiesId = stringTable.getStringIndex(DynamicTypeDeserializer.id)
     }
 
-    override fun serializeClass(descriptor: ClassDescriptor, proto: ProtoBuf.Class.Builder) {
+    override fun serializeClass(
+        descriptor: ClassDescriptor,
+        proto: ProtoBuf.Class.Builder,
+        versionRequirementTable: MutableVersionRequirementTable
+    ) {
         val id = getFileId(descriptor)
         if (id != null) {
             proto.setExtension(JsProtoBuf.classContainingFileId, id)
         }
-        super.serializeClass(descriptor, proto)
+        super.serializeClass(descriptor, proto, versionRequirementTable)
     }
 
     override fun serializeProperty(descriptor: PropertyDescriptor, proto: ProtoBuf.Property.Builder) {
