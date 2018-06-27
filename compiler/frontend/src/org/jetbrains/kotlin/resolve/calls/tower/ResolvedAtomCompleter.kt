@@ -136,10 +136,11 @@ class ResolvedAtomCompleter(
         }
 
         val functionDescriptor = trace.bindingContext.get(BindingContext.FUNCTION, ktFunction) as? FunctionDescriptorImpl
-                ?: throw AssertionError("No function descriptor for resolved lambda argument")
+                ?: throw AssertionError("No function descriptor for resolved lambda argument: $ktFunction")
         functionDescriptor.setReturnType(returnType)
 
-        val existingLambdaType = trace.getType(ktArgumentExpression) ?: throw AssertionError("No type for resolved lambda argument")
+        val existingLambdaType = trace.getType(ktArgumentExpression)
+                ?: throw AssertionError("No type for resolved lambda argument: $ktArgumentExpression")
         val substitutedFunctionalType = createFunctionType(
             builtIns,
             existingLambdaType.annotations,
