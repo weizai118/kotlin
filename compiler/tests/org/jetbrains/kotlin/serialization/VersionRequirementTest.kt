@@ -168,4 +168,11 @@ class VersionRequirementTest : TestCaseWithTmpdir() {
             "test.Derived"
         )
     }
+
+    fun testJvmFieldInInterfaceCompanion() {
+        doTest(
+            VersionRequirement.Version(1, 2, 60), DeprecationLevel.ERROR, null, COMPILER_VERSION, null,
+            "test.Base.Companion.foo"
+        )
+    }
 }
