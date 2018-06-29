@@ -14,8 +14,10 @@ import com.intellij.psi.search.LocalSearchScope
 import com.intellij.psi.search.SearchScope
 import com.intellij.util.IncorrectOperationException
 import org.jetbrains.annotations.NonNls
+import org.jetbrains.kotlin.asJava.builder.LightMemberOriginForDeclaration
 import org.jetbrains.kotlin.asJava.classes.lazyPub
 import org.jetbrains.kotlin.idea.KotlinLanguage
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtFunction
 import org.jetbrains.kotlin.psi.KtParameter
 import org.jetbrains.kotlin.psi.KtProperty
@@ -29,7 +31,12 @@ class KtLightParameter(
 ) : LightParameter(clsDelegate.name ?: "p$index", clsDelegate.type, method, KotlinLanguage.INSTANCE),
         KtLightDeclaration<KtParameter, PsiParameter> {
 
-    private val lightModifierList by lazyPub { KtLightSimpleModifierList(this, emptySet()) }
+    private val lightModifierList by lazyPub {
+        if (method.lightMemberOrigin is LightMemberOriginForDeclaration || method.containingClass.kotlinOrigin?.hasModifier(KtTokens.DATA_KEYWORD) == true)
+            KtLightSimpleModifierList(this, emptySet())
+        else
+            super.getModifierList()
+    }
     
     private var lightIdentifier: KtLightIdentifier? = null
 
