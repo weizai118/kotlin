@@ -306,7 +306,9 @@ class IntrinsicifyCallsLowering(private val context: JsIrBackendContext) : FileL
             ).apply {
                 putValueArgument(0, call.dispatchReceiver)
             }
+        }
 
+        if (call.dispatchReceiver?.type?.isLong() == true) {
             call
         } else {
             // Only use JS intrinsics when LHS type is not Long
