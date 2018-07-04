@@ -30,7 +30,7 @@ import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 
 // TODO: generate $metadata$ property and fill it with corresponding KFunction/KProperty interface
-class CallableReferenceLowering(val context: JsIrBackendContext) : FileLoweringPass {
+class CallableReferenceLowering(val context: JsIrBackendContext) {
 
     private data class CallableReferenceKey(
         val declaration: IrFunction,
@@ -47,12 +47,31 @@ class CallableReferenceLowering(val context: JsIrBackendContext) : FileLoweringP
 
     private val newDeclarations = mutableListOf<IrDeclaration>()
 
-    override fun lower(irFile: IrFile) {
-        irFile.acceptVoid(CallableReferenceCollector())
-        buildClosures()
-        irFile.transformChildrenVoid(CallableReferenceTransformer())
-        irFile.declarations += newDeclarations
-    }
+    fun getReferenceCollector() = object : FileLoweringPass {
+        private val collector = CallableReferenceCollector()
+        override fun lower(irFile: IrFile) = irFile.acceptVoid(collector)
+    }::lower
+
+    fun getClosureBuilder() = object : FileLoweringPass {
+        override fun lower(irFile: IrFile) {
+            newDeclarations.clear()
+            buildClosures(irFile)
+            irFile.declarations += newDeclarations
+        }
+
+    }::lower
+
+    fun getReferenceReplacer() = object : FileLoweringPass {
+        private val replacer = CallableReferenceTransformer()
+        override fun lower(irFile: IrFile) = irFile.transformChildrenVoid(replacer)
+    }::lower
+
+//    override fun lower(irFile: IrFile) {
+//        irFile.acceptVoid(CallableReferenceCollector())
+//        buildClosures()
+//        irFile.transformChildrenVoid(CallableReferenceTransformer())
+//        irFile.declarations += newDeclarations
+//    }
 
     private fun makeCallableKey(declaration: IrFunction, reference: IrCallableReference) =
         CallableReferenceKey(declaration, reference.dispatchReceiver != null, reference.extensionReceiver != null)
@@ -72,16 +91,35 @@ class CallableReferenceLowering(val context: JsIrBackendContext) : FileLoweringP
         }
     }
 
-    private fun buildClosures() {
-        for (v in collectedReferenceMap.values) {
-            newDeclarations += v.accept(object : IrElementVisitor<List<IrDeclaration>, Nothing?> {
-                override fun visitElement(element: IrElement, data: Nothing?) = error("Unreachable execution")
-                override fun visitFunctionReference(expression: IrFunctionReference, data: Nothing?) =
-                    lowerKFunctionReference(expression.symbol.owner, expression)
+    private fun buildClosures(irFile: IrFile) {
 
-                override fun visitPropertyReference(expression: IrPropertyReference, data: Nothing?) =
-                    lowerKPropertyReference(expression.getter!!.owner, expression)
-            }, null)
+        val declarationsSet = mutableSetOf<CallableDescriptor>()
+        irFile.acceptVoid(object : IrElementVisitorVoid {
+            override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
+
+            override fun visitFunction(declaration: IrFunction) {
+                super.visitFunction(declaration)
+                declarationsSet += declaration.descriptor
+            }
+
+            override fun visitField(declaration: IrField) {
+                super.visitField(declaration)
+                declarationsSet += declaration.descriptor
+            }
+        })
+
+
+        for (v in collectedReferenceMap.values) {
+            if (v.descriptor in declarationsSet) {
+                newDeclarations += v.accept(object : IrElementVisitor<List<IrDeclaration>, Nothing?> {
+                    override fun visitElement(element: IrElement, data: Nothing?) = error("Unreachable execution")
+                    override fun visitFunctionReference(expression: IrFunctionReference, data: Nothing?) =
+                        lowerKFunctionReference(expression.symbol.owner, expression)
+
+                    override fun visitPropertyReference(expression: IrPropertyReference, data: Nothing?) =
+                        lowerKPropertyReference(expression.getter!!.owner, expression)
+                }, null)
+            }
         }
     }
 

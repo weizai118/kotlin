@@ -87,14 +87,17 @@ fun JsIrBackendContext.lower(moduleFragment: IrModuleFragment) {
     moduleFragment.files.forEach(PropertiesLowering()::lower)
     moduleFragment.files.forEach(InitializersLowering(this, JsLoweredDeclarationOrigin.CLASS_STATIC_INITIALIZER, false)::runOnFilePostfix)
     moduleFragment.files.forEach(MultipleCatchesLowering(this)::lower)
+    moduleFragment.files.forEach(BridgesConstruction(this)::runOnFilePostfix)
     moduleFragment.files.forEach(TypeOperatorLowering(this)::lower)
     moduleFragment.files.forEach(BlockDecomposerLowering(this)::runOnFilePostfix)
     val sctor = SecondaryCtorLowering(this)
     moduleFragment.files.forEach(sctor.getConstructorProcessorLowering())
     moduleFragment.files.forEach(sctor.getConstructorRedirectorLowering())
-    moduleFragment.files.forEach(CallableReferenceLowering(this)::lower)
+    val clble = CallableReferenceLowering(this)
+    moduleFragment.files.forEach(clble.getReferenceCollector())
+    moduleFragment.files.forEach(clble.getClosureBuilder())
+    moduleFragment.files.forEach(clble.getReferenceReplacer())
     moduleFragment.files.forEach(IntrinsicifyCallsLowering(this)::lower)
-    moduleFragment.files.forEach(BridgesConstruction(this)::runOnFilePostfix)
 }
 
 // TODO find out why duplicates occur
