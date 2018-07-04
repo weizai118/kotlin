@@ -35,6 +35,7 @@ import org.jetbrains.kotlin.ir.builders.irGet
 import org.jetbrains.kotlin.ir.builders.irReturn
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
+import org.jetbrains.kotlin.ir.types.toKotlinType
 import org.jetbrains.kotlin.ir.util.createParameterDeclarations
 import org.jetbrains.kotlin.ir.util.isInterface
 import org.jetbrains.kotlin.ir.util.isReal
@@ -117,7 +118,8 @@ class BridgesConstruction(val context: JsIrBackendContext) : ClassLoweringPass {
             descriptor.descriptor.source)
 
         bridgeDescriptorForIrFunction.initialize(
-            bridge.descriptor.extensionReceiverParameter?.returnType, containingClass.thisAsReceiverParameter, emptyList(),
+            bridge.descriptor.extensionReceiverParameter?.returnType, containingClass.thisAsReceiverParameter,
+            bridge.descriptor.typeParameters,
             bridge.descriptor.valueParameters.map { it.copy(bridgeDescriptorForIrFunction, it.name, it.index) },
             bridge.descriptor.returnType, Modality.OPEN, descriptor.visibility
         )
@@ -176,8 +178,8 @@ class FunctionAndSignature(val function: IrSimpleFunction) {
 
     private val signature = Signature(
         function.name,
-        function.extensionReceiverParameter?.type.toString(),
-        function.valueParameters.map { it.type.toString() }
+        function.extensionReceiverParameter?.type?.toKotlinType()?.toString(),
+        function.valueParameters.map { it.type.toKotlinType().toString() }
     )
 
     override fun equals(other: Any?) =

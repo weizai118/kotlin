@@ -66,13 +66,6 @@ class CallableReferenceLowering(val context: JsIrBackendContext) {
         override fun lower(irFile: IrFile) = irFile.transformChildrenVoid(replacer)
     }::lower
 
-//    override fun lower(irFile: IrFile) {
-//        irFile.acceptVoid(CallableReferenceCollector())
-//        buildClosures()
-//        irFile.transformChildrenVoid(CallableReferenceTransformer())
-//        irFile.declarations += newDeclarations
-//    }
-
     private fun makeCallableKey(declaration: IrFunction, reference: IrCallableReference) =
         CallableReferenceKey(declaration, reference.dispatchReceiver != null, reference.extensionReceiver != null)
 

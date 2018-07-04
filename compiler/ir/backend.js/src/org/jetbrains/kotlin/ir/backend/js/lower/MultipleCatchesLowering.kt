@@ -76,21 +76,26 @@ class MultipleCatchesLowering(val context: JsIrBackendContext) : FileLoweringPas
                 for (catch in aTry.catches) {
                     assert(!catch.catchParameter.isVar) { "caught exception parameter has to be immutable" }
                     val type = catch.catchParameter.type
-                    if (type !is IrDynamicType) {
-                        val typeSymbol = type.classifierOrNull
-                        val castedPendingException = buildImplicitCast(pendingException, type, typeSymbol!!)
-                        val catchBody = catch.result.transform(object : IrElementTransformer<VariableDescriptor> {
-                            override fun visitGetValue(expression: IrGetValue, data: VariableDescriptor) =
-                                if (expression.descriptor == data)
-                                    castedPendingException
-                                else
-                                    expression
-                        }, catch.parameter)
-                        val typeCheck = buildIsCheck(pendingException, type, typeSymbol)
-                        branches += IrBranchImpl(catch.startOffset, catch.endOffset, typeCheck, catchBody)
-                    } else {
-                        branches += IrElseBranchImpl(catch.startOffset, catch.endOffset, litTrue, catch.result)
+
+                    val typeSymbol = type.classifierOrNull
+                    val castedPendingException = if (type !is IrDynamicType)
+                        buildImplicitCast(pendingException, type, typeSymbol!!)
+                    else pendingException
+
+                    val catchBody = catch.result.transform(object : IrElementTransformer<VariableDescriptor> {
+                        override fun visitGetValue(expression: IrGetValue, data: VariableDescriptor) =
+                            if (expression.descriptor == data)
+                                castedPendingException
+                            else
+                                expression
+                    }, catch.parameter)
+
+                    if (type is IrDynamicType) {
+                        branches += IrElseBranchImpl(catch.startOffset, catch.endOffset, litTrue, catchBody)
                         break
+                    } else {
+                        val typeCheck = buildIsCheck(pendingException, type, typeSymbol!!)
+                        branches += IrBranchImpl(catch.startOffset, catch.endOffset, typeCheck, catchBody)
                     }
                 }
 
