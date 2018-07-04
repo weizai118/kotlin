@@ -41,9 +41,7 @@ import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
 import org.jetbrains.kotlin.ir.descriptors.IrTemporaryVariableDescriptorImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
-import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
+import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrVariableSymbolImpl
@@ -774,7 +772,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                         outType = context.builtIns.nullableAnyType,
                         isMutable = true
                     )
-                ), type = context.irBuiltIns.anyNType)
+                ), JsIrBuilder.buildGetValue(dataArgument.symbol), context.irBuiltIns.anyNType)
                 suspendState = JsIrBuilder.buildVar(IrVariableSymbolImpl(
                     IrTemporaryVariableDescriptorImpl(
                         containingDeclaration = irFunction.descriptor,
@@ -832,7 +830,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                 coroutineImplExceptionStateFieldSymbol,
                 coroutineImplLabelFieldSymbol,
                 thisReceiver,
-                suspendResult
+                suspendResult.symbol
             )
 
             body.acceptVoid(stateMachineBuilder)
@@ -862,7 +860,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                 switch.branches += IrBranchImpl(state.entryBlock.startOffset, state.entryBlock.endOffset, condition, state.entryBlock)
             }
 
-            val irResultDeclaration = JsIrBuilder.buildVar(suspendResult.symbol, JsIrBuilder.buildGetValue(dataArgument.symbol), suspendResult.type)
+            val irResultDeclaration = suspendResult
 //            val irStateDeclaration = JsIrBuilder.buildVar(suspendState, JsIrBuilder.buildGetField(coroutineImplLabelFieldSymbol, JsIrBuilder.buildGetValue(thisReceiver)))
 //            val irSaveException = JsIrBuilder.buildSetField(
 //                coroutineImplExceptionFieldSymbol,
@@ -888,23 +886,23 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
             val liveLocals = computeLivenessAtSuspensionPoints(functionBody).values.flatten().toSet()
 
-            val localToPropertyMap = mutableMapOf<IrValueDeclaration, IrField>()
+            val localToPropertyMap = mutableMapOf<IrValueSymbol, IrFieldSymbol>()
             var localCounter = 0
             // TODO: optimize by using the same property for different locals.
             liveLocals.forEach {
                 if (it != suspendState && it != suspendResult) {
-                    localToPropertyMap.getOrPut(it) {
-                        addField(Name.identifier("${it.name}${localCounter++}"), it.type, (it as? IrVariable)?.isVar ?: false)
+                    localToPropertyMap.getOrPut(it.symbol) {
+                        addField(Name.identifier("${it.name}${localCounter++}"), it.type, (it as? IrVariable)?.isVar ?: false).symbol
                     }
                 }
             }
             irFunction.explicitParameters.forEach {
-                localToPropertyMap.getOrPut(it) {
-                    argumentToPropertiesMap.getValue(it.descriptor)
+                localToPropertyMap.getOrPut(it.symbol) {
+                    argumentToPropertiesMap.getValue(it.descriptor).symbol
                 }
             }
 
-            function.transform(LiveLocalsTransformer(localToPropertyMap, JsIrBuilder.buildGetValue(thisReceiver)), null)
+            function.transform(LiveLocalsTransformer(localToPropertyMap, JsIrBuilder.buildGetValue(thisReceiver), unit), null)
         }
 
         private fun computeLivenessAtSuspensionPoints(body: IrBody): Map<IrCall, List<IrValueDeclaration>> {

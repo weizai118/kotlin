@@ -233,7 +233,7 @@ class BlockDecomposerTransformer(context: JsIrBackendContext) : IrElementTransfo
                 val result = IrCompositeImpl(receiverResult.startOffset, expression.endOffset, unitType)
                 val receiverValue = receiverResult.statements.last() as IrExpression
                 val tmp = makeTempVar(receiverResult.type)
-                val irVar = JsIrBuilder.buildVar(tmp, receiverValue)
+                val irVar = JsIrBuilder.buildVar(tmp, receiverValue, receiverResult.type)
                 val setValue = valueResult.statements.last() as IrExpression
                 result.statements += receiverResult.statements.run { subList(0, lastIndex) }
                 result.statements += irVar
