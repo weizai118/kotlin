@@ -59,7 +59,7 @@ class KtPostfixTemplateProvider : PostfixTemplateProvider {
         KtSoutPostfixTemplate,
         KtReturnPostfixTemplate,
         KtWhilePostfixTemplate
-    )
+    ) + listOf("listOf", "setOf", "arrayOf", "sequenceOf").map(::KtWrapWithCallPostfixTemplate)
 
     override fun isTerminalSymbol(currentChar: Char) = currentChar == '.' || currentChar == '!'
 
