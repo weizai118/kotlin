@@ -2,24 +2,30 @@
 // WITH_RUNTIME
 // WITH_COROUTINES
 // COMMON_COROUTINES_TEST
+// FULL_JDK
 import helpers.*
 import COROUTINES_PACKAGE.*
 import COROUTINES_PACKAGE.intrinsics.*
+import java.util.*
 
 class Controller {
     var log = ""
     var resumeIndex = 0
 
-    suspend fun <T> suspendWithValue(value: T): T = suspendCoroutineOrReturn { continuation ->
+    val queue: Queue<() -> Unit> = LinkedList()
+
+    suspend fun <T> suspendWithValue(value: T): T = suspendCoroutine { continuation ->
         log += "suspend($value);"
-        continuation.resume(value)
-        COROUTINE_SUSPENDED
+        queue.offer {
+            continuation.resume(value)
+        }
     }
 
-    suspend fun suspendWithException(value: String): Unit = suspendCoroutineOrReturn { continuation ->
+    suspend fun suspendWithException(value: String): Unit = suspendCoroutine { continuation ->
         log += "error($value);"
-        continuation.resumeWithException(RuntimeException(value))
-        COROUTINE_SUSPENDED
+        queue.offer {
+            continuation.resumeWithException(RuntimeException(value))
+        }
     }
 }
 
@@ -70,6 +76,9 @@ fun test(c: suspend Controller.() -> Unit): String {
             return true
         }
     }))
+
+    while (controller.queue.poll()?.invoke() != null);
+
     return controller.log
 }
 
@@ -79,7 +88,7 @@ fun box(): String {
         val k = suspendWithValue("K")
         log += "$o$k;"
     }
-    if (result != "before 0;suspend(O);before 1;suspend(K);before 2;OK;after 2;after 1;after 0;") return "fail1: $result"
+    if (result != "before 0;suspend(O);after 0;before 1;suspend(K);after 1;before 2;OK;after 2;") return "fail1: $result"
 
     result = test {
         try {
@@ -90,7 +99,7 @@ fun box(): String {
             log += "${e.message};"
         }
     }
-    if (result != "before 0;error(OK);before 1;OK;after 1;after 0;") return "fail2: $result"
+    if (result != "before 0;error(OK);after 0;before 1;OK;after 1;") return "fail2: $result"
 
     return "OK"
 }
