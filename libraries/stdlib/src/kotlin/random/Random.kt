@@ -25,7 +25,7 @@ public abstract class Random {
      *
      * Generates an `Int` whose lower [bitCount] bits are filled with random values and the remaining upper bits are zero.
      *
-     * @param bitCount number of bits to generate, must be in range 0..32, otherwise the behavior is unspecified.
+     * @param bitCount number of bits to generate, must be in range 1..32, otherwise the behavior is unspecified.
      */
     public abstract fun nextBits(bitCount: Int): Int
 
@@ -60,7 +60,7 @@ public abstract class Random {
         if (n > 0 || n == Int.MIN_VALUE) {
             val rnd = if (n and -n == n) {
                 val bitCount = fastLog2(n)
-                nextBits(bitCount)
+                if (bitCount > 0) nextBits(bitCount) else 0
             } else {
                 var v: Int
                 do {
@@ -123,15 +123,22 @@ public abstract class Random {
         if (n > 0) {
             val rnd: Long
             if (n and -n == n) {
-                val bitCount = fastLog2((n ushr 32).toInt())
+                val nLow = n.toInt()
+                val nHigh = (n ushr 32).toInt()
                 rnd = when {
-                    bitCount < 0 ->
+                    nLow == 1 -> 0
+                    nLow != 0 -> {
+                        val bitCount = fastLog2(nLow)
                         // toUInt().toLong()
-                        nextBits(fastLog2(n.toInt())).toLong() and 0xFFFFFFFF
-                    bitCount == 0 ->
-                        nextBits(32).toLong() and 0xFFFFFFFF
-                    else ->
+                        nextBits(bitCount).toLong() and 0xFFFF_FFFF
+                    }
+                    nHigh == 1 ->
+                        // toUInt().toLong()
+                        nextBits(32).toLong() and 0xFFFF_FFFF
+                    else -> {
+                        val bitCount = fastLog2(nHigh)
                         nextBits(bitCount).toLong().shl(32) + nextBits(32)
+                    }
                 }
             } else {
                 var v: Long
