@@ -9,7 +9,7 @@ suspend fun foo(): Unit = suspendCoroutine {
     it.resume(Unit)
 }
 
-suspend fun bar(): Unit = suspendCoroutineOrReturn {
+suspend fun bar(): Unit = suspendCoroutineUninterceptedOrReturn {
     it.resume(Unit)
     COROUTINE_SUSPENDED
 }

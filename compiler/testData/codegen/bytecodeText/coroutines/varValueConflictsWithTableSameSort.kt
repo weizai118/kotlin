@@ -5,9 +5,7 @@ import helpers.*
 // TREAT_AS_ONE_FILE
 import kotlin.coroutines.*
 import kotlin.coroutines.intrinsics.*
-suspend fun suspendHere(): String = suspendCoroutineOrReturn { x ->
-    x.resume("OK")
-}
+suspend fun suspendHere(): String = ""
 
 fun builder(c: suspend () -> Unit) {
     c.startCoroutine(EmptyContinuation)
