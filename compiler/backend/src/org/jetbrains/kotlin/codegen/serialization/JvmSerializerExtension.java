@@ -188,7 +188,9 @@ public class JvmSerializerExtension extends SerializerExtension {
                 setterMethod != null ? signatureSerializer.methodSignature(null, setterMethod) : null
         );
 
-        proto.setExtension(JvmProtoBuf.propertySignature, signature);
+        if (signature != null) {
+            proto.setExtension(JvmProtoBuf.propertySignature, signature);
+        }
     }
 
     @Override
@@ -254,7 +256,7 @@ public class JvmSerializerExtension extends SerializerExtension {
             return classId == null ? null : ClassMapperLite.mapClass(classId.asString());
         }
 
-        @NotNull
+        @Nullable
         public JvmProtoBuf.JvmPropertySignature propertySignature(
                 @NotNull PropertyDescriptor descriptor,
                 @Nullable String fieldName,
@@ -281,7 +283,8 @@ public class JvmSerializerExtension extends SerializerExtension {
                 signature.setSetter(setter);
             }
 
-            return signature.build();
+            JvmProtoBuf.JvmPropertySignature result = signature.build();
+            return result.getSerializedSize() > 0 ? result : null;
         }
 
         @NotNull
