@@ -316,6 +316,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
         private val coroutineImplExceptionStateFieldSymbol = coroutineImplSymbol.getPropertyField("exceptionState")!!
 
         private val coroutineConstructors = mutableListOf<IrConstructor>()
+        private var exceptionTrapId = -1
 
         fun build(): BuiltCoroutine {
             val superTypes = mutableListOf<IrType>(coroutineImplSymbol.owner.defaultType)
@@ -425,6 +426,8 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             coroutineClass.addChild(doResumeMethodBuilder.ir)
 
             coroutineClass.setSuperSymbolsAndAddFakeOverrides(superTypes)
+
+            setupExceptionState()
 
             return BuiltCoroutine(
                     coroutineClass       = coroutineClass,
@@ -799,6 +802,16 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             }
         }
 
+        private fun setupExceptionState() {
+            for (it in coroutineConstructors) {
+                (it.body as? IrBlockBody)?.run {
+                    val receiver = JsIrBuilder.buildGetValue(coroutineClassThis.symbol)
+                    val id = JsIrBuilder.buildInt(context.irBuiltIns.intType, exceptionTrapId)
+                    statements += JsIrBuilder.buildSetField(coroutineImplExceptionStateFieldSymbol, receiver, id, context.irBuiltIns.unitType)
+                }
+            }
+        }
+
         private fun buildStateMachine(body: IrBlock, function: IrFunction) {
             body.transformChildrenVoid(SuspendPointTransformer())
 
@@ -872,13 +885,15 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
 
 
-            for (it in coroutineConstructors) {
-                (it.body as? IrBlockBody)?.run {
-                    val receiver = JsIrBuilder.buildGetValue(coroutineClassThis.symbol)
-                    val id = JsIrBuilder.buildInt(context.irBuiltIns.intType, stateMachineBuilder.rootExceptionTrap.id)
-                    statements += JsIrBuilder.buildSetField(coroutineImplExceptionStateFieldSymbol, receiver, id, id.type)
-                }
-            }
+//            for (it in coroutineConstructors) {
+//                (it.body as? IrBlockBody)?.run {
+//                    val receiver = JsIrBuilder.buildGetValue(coroutineClassThis.symbol)
+//                    val id = JsIrBuilder.buildInt(context.irBuiltIns.intType, stateMachineBuilder.rootExceptionTrap.id)
+//                    statements += JsIrBuilder.buildSetField(coroutineImplExceptionStateFieldSymbol, receiver, id, unit)
+//                }
+//            }
+
+            exceptionTrapId = stateMachineBuilder.rootExceptionTrap.id
 
             val functionBody = IrBlockBodyImpl(function.startOffset, function.endOffset, listOf(irResultDeclaration, rootLoop))
 
