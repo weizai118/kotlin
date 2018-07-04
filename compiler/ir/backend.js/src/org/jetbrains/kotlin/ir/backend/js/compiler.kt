@@ -12,7 +12,6 @@ import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.ir.backend.js.lower.*
 import org.jetbrains.kotlin.ir.backend.js.lower.inline.*
 import org.jetbrains.kotlin.ir.backend.js.transformers.irToJs.IrModuleToJsTransformer
-import org.jetbrains.kotlin.ir.declarations.IrFile
 import org.jetbrains.kotlin.ir.declarations.IrModuleFragment
 import org.jetbrains.kotlin.ir.util.ExternalDependenciesGenerator
 import org.jetbrains.kotlin.ir.util.patchDeclarationParents
@@ -84,7 +83,7 @@ fun JsIrBackendContext.lower(moduleFragment: IrModuleFragment) {
     moduleFragment.files.forEach(LocalDeclarationsLowering(this)::runOnFilePostfix)
     moduleFragment.files.forEach(InnerClassesLowering(this)::runOnFilePostfix)
     moduleFragment.files.forEach(InnerClassConstructorCallsLowering(this)::runOnFilePostfix)
-    moduleFragment.files.forEach(SuspendFunctionsLowering(this)::runOnFilePostfix)
+    moduleFragment.files.forEach(SuspendFunctionsLowering2(this)::runOnFilePostfix)
     moduleFragment.files.forEach(PropertiesLowering()::lower)
     moduleFragment.files.forEach(InitializersLowering(this, JsLoweredDeclarationOrigin.CLASS_STATIC_INITIALIZER, false)::runOnFilePostfix)
     moduleFragment.files.forEach(MultipleCatchesLowering(this)::lower)

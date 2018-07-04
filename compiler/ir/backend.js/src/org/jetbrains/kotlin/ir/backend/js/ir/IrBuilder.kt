@@ -92,8 +92,8 @@ object JsIrBuilder {
     fun buildFunctionReference(type: IrType, symbol: IrFunctionSymbol) =
         IrFunctionReferenceImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, type, symbol, symbol.descriptor, 0, null)
 
-    fun buildVar(symbol: IrVariableSymbol, initializer: IrExpression? = null, type: IrType? = null) =
-        IrVariableImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, SYNTHESIZED_DECLARATION, symbol, type ?: symbol.owner.type)
+    fun buildVar(symbol: IrVariableSymbol, initializer: IrExpression? = null, type: IrType) =
+        IrVariableImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, SYNTHESIZED_DECLARATION, symbol, type)
             .apply { this.initializer = initializer }
 
     fun buildBreak(type: IrType, loop: IrLoop) = IrBreakImpl(UNDEFINED_OFFSET, UNDEFINED_OFFSET, type, loop)

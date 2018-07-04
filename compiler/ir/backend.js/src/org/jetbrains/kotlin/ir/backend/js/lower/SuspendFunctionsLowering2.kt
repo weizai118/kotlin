@@ -1,23 +1,14 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.lower
 
 import org.jetbrains.kotlin.backend.common.*
+import org.jetbrains.kotlin.backend.common.descriptors.explicitParameters
 import org.jetbrains.kotlin.backend.common.descriptors.getFunction
+import org.jetbrains.kotlin.backend.common.descriptors.replace
 import org.jetbrains.kotlin.backend.common.descriptors.synthesizedName
 import org.jetbrains.kotlin.backend.common.ir.createOverriddenDescriptor
 import org.jetbrains.kotlin.backend.common.lower.SymbolWithIrBuilder
@@ -32,7 +23,10 @@ import org.jetbrains.kotlin.descriptors.impl.SimpleFunctionDescriptorImpl
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.ir.IrElement
 import org.jetbrains.kotlin.ir.backend.js.JsIrBackendContext
-import org.jetbrains.kotlin.ir.backend.js.ir.*
+import org.jetbrains.kotlin.ir.backend.js.ir.JsIrBuilder
+import org.jetbrains.kotlin.ir.backend.js.ir.addChild
+import org.jetbrains.kotlin.ir.backend.js.ir.setSuperSymbolsAndAddFakeOverrides
+import org.jetbrains.kotlin.ir.backend.js.ir.stub
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrClassImpl
@@ -41,24 +35,20 @@ import org.jetbrains.kotlin.ir.declarations.impl.IrFunctionImpl
 import org.jetbrains.kotlin.ir.descriptors.IrTemporaryVariableDescriptorImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.IrConstructorSymbol
-import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
+import org.jetbrains.kotlin.ir.symbols.*
 import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
 import org.jetbrains.kotlin.ir.symbols.impl.IrVariableSymbolImpl
-import org.jetbrains.kotlin.ir.types.IrType
-import org.jetbrains.kotlin.ir.types.classifierOrFail
-import org.jetbrains.kotlin.ir.types.toKotlinType
-import org.jetbrains.kotlin.ir.types.typeWith
 import org.jetbrains.kotlin.ir.util.*
 import org.jetbrains.kotlin.ir.visitors.*
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.resolve.scopes.MemberScope
 import org.jetbrains.kotlin.storage.LockBasedStorageManager
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.utils.DFS
 
-internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLoweringPass {
+internal class SuspendFunctionsLowering2(val context: JsIrBackendContext): DeclarationContainerLoweringPass {
 
     private object STATEMENT_ORIGIN_COROUTINE_IMPL : IrStatementOriginImpl("COROUTINE_IMPL")
     private object DECLARATION_ORIGIN_COROUTINE_IMPL : IrDeclarationOriginImpl("COROUTINE_IMPL")
@@ -66,72 +56,60 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
     private val builtCoroutines = mutableMapOf<FunctionDescriptor, BuiltCoroutine>()
     private val suspendLambdas = mutableMapOf<FunctionDescriptor, IrFunctionReference>()
 
-    override fun lower(irFile: IrFile) {
-        markSuspendLambdas(irFile)
-        buildCoroutines(irFile)
-        transformCallableReferencesToSuspendLambdas(irFile)
-    }
-
-    private fun buildCoroutines(irFile: IrFile) {
-        irFile.declarations.transformFlat(::tryTransformSuspendFunction)
-        irFile.acceptVoid(object: IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitClass(declaration: IrClass) {
-                declaration.acceptChildrenVoid(this)
-                declaration.declarations.transformFlat(::tryTransformSuspendFunction)
-            }
-        })
-    }
-
-    private fun tryTransformSuspendFunction(element: IrElement) =
-            if (element is IrFunction && element.descriptor.isSuspend && element.descriptor.modality != Modality.ABSTRACT)
-                transformSuspendFunction(element, suspendLambdas[element.descriptor])
+    override fun lower(irDeclarationContainer: IrDeclarationContainer) {
+        markSuspendLambdas(irDeclarationContainer)
+        irDeclarationContainer.declarations.transformFlat {
+            if (it is IrFunction && it.descriptor.isSuspend && it.descriptor.modality != Modality.ABSTRACT)
+                transformSuspendFunction(it, suspendLambdas[it.descriptor])
             else null
-
-    private fun markSuspendLambdas(irElement: IrElement) {
-        irElement.acceptChildrenVoid(object : IrElementVisitorVoid {
-            override fun visitElement(element: IrElement) {
-                element.acceptChildrenVoid(this)
-            }
-
-            override fun visitFunctionReference(expression: IrFunctionReference) {
-                expression.acceptChildrenVoid(this)
-
-                val descriptor = expression.descriptor
-                if (descriptor.isSuspend)
-                    suspendLambdas.put(descriptor, expression)
-            }
-        })
+        }
+        transformCallableReferencesToSuspendLambdas(irDeclarationContainer)
     }
 
-    private fun transformCallableReferencesToSuspendLambdas(irElement: IrElement) {
-        irElement.transformChildrenVoid(object : IrElementTransformerVoid() {
+    private fun markSuspendLambdas(irDeclarationContainer: IrDeclarationContainer) {
+        irDeclarationContainer.declarations.forEach {
+            it.acceptChildrenVoid(object: IrElementVisitorVoid {
+                override fun visitElement(element: IrElement) {
+                    element.acceptChildrenVoid(this)
+                }
 
-            override fun visitFunctionReference(expression: IrFunctionReference): IrExpression {
-                expression.transformChildrenVoid(this)
+                override fun visitFunctionReference(expression: IrFunctionReference) {
+                    expression.acceptChildrenVoid(this)
 
-                val descriptor = expression.descriptor
-                if (!descriptor.isSuspend)
-                    return expression
-                val coroutine = builtCoroutines[descriptor]
-                    ?: throw Error("Non-local callable reference to suspend lambda: $descriptor")
-                val constructorParameters = coroutine.coroutineConstructor.valueParameters
-                val expressionArguments = expression.getArguments().map { it.second }
-                assert(constructorParameters.size == expressionArguments.size,
-                       { "Inconsistency between callable reference to suspend lambda and the corresponding coroutine" })
-                val irBuilder = context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset)
-                irBuilder.run {
-                    return irCall(coroutine.coroutineConstructor.symbol).apply {
-                        expressionArguments.forEachIndexed { index, argument ->
-                            putValueArgument(index, argument)
+                    val descriptor = expression.descriptor
+                    if (descriptor.isSuspend)
+                        suspendLambdas.put(descriptor, expression)
+                }
+            })
+        }
+    }
+
+    private fun transformCallableReferencesToSuspendLambdas(irDeclarationContainer: IrDeclarationContainer) {
+        irDeclarationContainer.declarations.forEach {
+            it.transformChildrenVoid(object: IrElementTransformerVoid() {
+
+                override fun visitFunctionReference(expression: IrFunctionReference): IrExpression {
+                    expression.transformChildrenVoid(this)
+
+                    val descriptor = expression.descriptor
+                    if (!descriptor.isSuspend)
+                        return expression
+                    val coroutine = builtCoroutines[descriptor]
+                            ?: throw Error("Non-local callable reference to suspend lambda: $descriptor")
+                    val constructorParameters = coroutine.coroutineConstructor.valueParameters
+                    val expressionArguments = expression.getArguments().map { it.second }
+                    assert (constructorParameters.size == expressionArguments.size,
+                            { "Inconsistency between callable reference to suspend lambda and the corresponding coroutine" })
+                    val irBuilder = context.createIrBuilder(expression.symbol, expression.startOffset, expression.endOffset)
+                    irBuilder.run {
+                        return irCall(coroutine.coroutineConstructor.symbol).apply {
+                            expressionArguments.forEachIndexed { index, argument ->
+                                putValueArgument(index, argument) }
                         }
                     }
                 }
-            }
-        })
+            })
+        }
     }
 
     private sealed class SuspendFunctionKind {
@@ -230,7 +208,6 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             val f = getInternalFunctions("getContinuation")
             symbolTable.referenceSimpleFunction(f.single())
         }
-    private val continuationClassSymbol = getContinuationSymbol.owner.returnType.classifierOrFail as IrClassSymbol
     private val returnIfSuspendedDescriptor = context.getInternalFunctions("returnIfSuspended").single()
 
     private fun removeReturnIfSuspendedCallAndSimplifyDelegatingCall(irFunction: IrFunction, delegatingCall: IrCall) {
@@ -291,26 +268,27 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
     private inner class CoroutineBuilder(val irFunction: IrFunction, val functionReference: IrFunctionReference?) {
 
-        private val functionParameters = irFunction.explicitParameters
-        private val boundFunctionParameters = functionReference?.getArgumentsWithIr()?.map { it.first }
+        private val functionParameters = irFunction.descriptor.explicitParameters
+        private val boundFunctionParameters = functionReference?.getArguments()?.map { it.first }
         private val unboundFunctionParameters = boundFunctionParameters?.let { functionParameters - it }
 
-        private lateinit var suspendResult: IrVariable
-        private lateinit var suspendState: IrVariable
-        private lateinit var dataArgument: IrValueParameter
-        private lateinit var exceptionArgument: IrValueParameter
+        private lateinit var suspendResult: IrVariableSymbol
+        private lateinit var suspendState: IrVariableSymbol
+        private lateinit var dataArgument: IrValueParameterSymbol
+        private lateinit var exceptionArgument: IrValueParameterSymbol
         private lateinit var coroutineClassDescriptor: ClassDescriptorImpl
         private lateinit var coroutineClass: IrClassImpl
-        private lateinit var coroutineClassThis: IrValueParameter
-        private lateinit var argumentToPropertiesMap: Map<ParameterDescriptor, IrField>
+        private lateinit var coroutineClassThis: IrValueParameterSymbol
+        private lateinit var argumentToPropertiesMap: Map<ParameterDescriptor, IrFieldSymbol>
 
         private val coroutineImplSymbol = symbols.coroutineImpl
         private val coroutineImplConstructorSymbol = coroutineImplSymbol.constructors.single()
         private val coroutineImplClassDescriptor = coroutineImplSymbol.descriptor
-        private val create1Function = coroutineImplSymbol.owner.simpleFunctions()
-            .single { it.name.asString() == "create" && it.valueParameters.size == 1 }
+        private val create1FunctionDescriptor = coroutineImplClassDescriptor.unsubstitutedMemberScope
+                .getContributedFunctions(Name.identifier("create"), NoLookupLocation.FROM_BACKEND)
+                .single { it.valueParameters.size == 1 }
 
-        private val create1CompletionParameter = create1Function.valueParameters[0]
+        private val create1CompletionParameter = create1FunctionDescriptor.valueParameters[0]
 
         private val coroutineImplLabelFieldSymbol = coroutineImplSymbol.getPropertyField("label")!!
         private val coroutineImplResultFieldSymbol = coroutineImplSymbol.getPropertyField("pendingResult")!!
@@ -320,23 +298,28 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
         private val coroutineConstructors = mutableListOf<IrConstructor>()
 
         fun build(): BuiltCoroutine {
-            val superTypes = mutableListOf<IrType>(coroutineImplSymbol.owner.defaultType)
-            var suspendFunctionClass: IrClass? = null
-            var functionClass: IrClass? = null
-            var suspendFunctionClassTypeArguments: List<IrType>? = null
-            var functionClassTypeArguments: List<IrType>? = null
+            val superTypes = mutableListOf<KotlinType>(coroutineImplClassDescriptor.defaultType)
+            val superClasses = mutableListOf<IrClass>(coroutineImplSymbol.owner)
+            var suspendFunctionClassDescriptor: ClassDescriptor? = null
+            var functionClassDescriptor: ClassDescriptor? = null
+            var suspendFunctionClassTypeArguments: List<KotlinType>? = null
+            var functionClassTypeArguments: List<KotlinType>? = null
             if (unboundFunctionParameters != null) {
                 // Suspend lambda inherits SuspendFunction.
                 val numberOfParameters = unboundFunctionParameters.size
-                suspendFunctionClass = context.suspendFunctions[numberOfParameters].owner
+                suspendFunctionClassDescriptor = kotlinPackageScope.getContributedClassifier(
+                        Name.identifier("SuspendFunction$numberOfParameters"), NoLookupLocation.FROM_BACKEND) as ClassDescriptor
                 val unboundParameterTypes = unboundFunctionParameters.map { it.type }
-                suspendFunctionClassTypeArguments = unboundParameterTypes + irFunction.returnType
-                superTypes += suspendFunctionClass.typeWith(suspendFunctionClassTypeArguments)
+                suspendFunctionClassTypeArguments = unboundParameterTypes + irFunction.descriptor.returnType!!
+                superTypes += suspendFunctionClassDescriptor.defaultType.replace(suspendFunctionClassTypeArguments)
+                superClasses += context.suspendFunctions[numberOfParameters].owner
 
-                functionClass = context.functions[numberOfParameters + 1].owner
-                val continuationType = continuationClassSymbol.typeWith(irFunction.returnType)
-                functionClassTypeArguments = unboundParameterTypes + continuationType + context.irBuiltIns.anyNType
-                superTypes += functionClass.typeWith(functionClassTypeArguments)
+                functionClassDescriptor = kotlinPackageScope.getContributedClassifier(
+                        Name.identifier("Function${numberOfParameters + 1}"), NoLookupLocation.FROM_BACKEND) as ClassDescriptor
+                val continuationType = continuationClassDescriptor.defaultType.replace(listOf(irFunction.descriptor.returnType!!))
+                functionClassTypeArguments = unboundParameterTypes + continuationType + context.builtIns.nullableAnyType
+                superTypes += functionClassDescriptor.defaultType.replace(functionClassTypeArguments)
+                superClasses += context.functions[numberOfParameters + 1].owner
 
             }
             coroutineClassDescriptor = ClassDescriptorImpl(
@@ -344,13 +327,11 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                     /* name                  = */ "${irFunction.descriptor.name}\$${coroutineId++}".synthesizedName,
                     /* modality              = */ Modality.FINAL,
                     /* kind                  = */ ClassKind.CLASS,
-                    /* superTypes            = */ superTypes.map { it.toKotlinType() },
+                    /* superTypes            = */ superTypes,
                     /* source                = */ SourceElement.NO_SOURCE,
                     /* isExternal            = */ false,
                     /* storageManager        = */ LockBasedStorageManager.NO_LOCKS
-            ).also {
-                it.initialize(stub("coroutine class"), stub("coroutine class constructors"), null)
-            }
+            )
             coroutineClass = IrClassImpl(
                     startOffset = irFunction.startOffset,
                     endOffset   = irFunction.endOffset,
@@ -358,21 +339,17 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                     descriptor  = coroutineClassDescriptor
             )
             coroutineClass.parent = irFunction.parent
-            coroutineClass.createParameterDeclarations()
-            coroutineClassThis = coroutineClass.thisReceiver!!
 
 
             val overriddenMap = mutableMapOf<CallableMemberDescriptor, CallableMemberDescriptor>()
             val constructors = mutableSetOf<ClassConstructorDescriptor>()
             val coroutineConstructorBuilder = createConstructorBuilder()
             constructors.add(coroutineConstructorBuilder.symbol.descriptor)
-            coroutineConstructorBuilder.initialize()
 
-            val doResumeFunction = coroutineImplSymbol.owner.simpleFunctions()
-                    .single { it.name.asString() == "doResume" }
-            val doResumeMethodBuilder = createDoResumeMethodBuilder(doResumeFunction, coroutineClass)
-            doResumeMethodBuilder.initialize()
-            overriddenMap += doResumeFunction.descriptor to doResumeMethodBuilder.symbol.descriptor
+            val doResumeFunctionDescriptor = coroutineImplClassDescriptor.unsubstitutedMemberScope
+                    .getContributedFunctions(Name.identifier("doResume"), NoLookupLocation.FROM_BACKEND).single()
+            val doResumeMethodBuilder = createDoResumeMethodBuilder(doResumeFunctionDescriptor)
+            overriddenMap += doResumeFunctionDescriptor to doResumeMethodBuilder.symbol.descriptor
 
             var coroutineFactoryConstructorBuilder: SymbolWithIrBuilder<IrConstructorSymbol, IrConstructor>? = null
             var createMethodBuilder: SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>? = null
@@ -388,24 +365,27 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                 createMethodBuilder = createCreateMethodBuilder(
                         unboundArgs                    = unboundFunctionParameters!!,
                         superFunctionDescriptor        = createFunctionDescriptor,
-                        coroutineConstructor           = coroutineConstructorBuilder.ir,
-                        coroutineClass                 = coroutineClass)
-                createMethodBuilder.initialize()
+                        coroutineConstructorSymbol     = coroutineConstructorBuilder.symbol)
                 if (createFunctionDescriptor != null)
                     overriddenMap += createFunctionDescriptor to createMethodBuilder.symbol.descriptor
 
-                val invokeFunctionDescriptor = functionClass!!.descriptor
-                        .getFunction("invoke", functionClassTypeArguments!!.map { it.toKotlinType() })
-                val suspendInvokeFunctionDescriptor = suspendFunctionClass!!.descriptor
-                        .getFunction("invoke", suspendFunctionClassTypeArguments!!.map { it.toKotlinType() })
+                val invokeFunctionDescriptor = functionClassDescriptor!!.getFunction("invoke", functionClassTypeArguments!!)
+                val suspendInvokeFunctionDescriptor = suspendFunctionClassDescriptor!!.getFunction("invoke", suspendFunctionClassTypeArguments!!)
                 invokeMethodBuilder = createInvokeMethodBuilder(
                         suspendFunctionInvokeFunctionDescriptor = suspendInvokeFunctionDescriptor,
                         functionInvokeFunctionDescriptor        = invokeFunctionDescriptor,
-                        createFunction                          = createMethodBuilder.ir,
-                        doResumeFunction                        = doResumeMethodBuilder.ir,
-                        coroutineClass                          = coroutineClass)
+                        createFunctionSymbol                    = createMethodBuilder.symbol,
+                        doResumeFunctionSymbol                  = doResumeMethodBuilder.symbol)
             }
 
+            val memberScope = stub<MemberScope>("coroutine class")
+            coroutineClassDescriptor.initialize(memberScope, constructors, null)
+
+            coroutineClass.createParameterDeclarations()
+
+            coroutineClassThis = coroutineClass.thisReceiver!!.symbol
+
+            coroutineConstructorBuilder.initialize()
             coroutineClass.addChild(coroutineConstructorBuilder.ir)
             coroutineConstructors += coroutineConstructorBuilder.ir
 
@@ -416,6 +396,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             }
 
             createMethodBuilder?.let {
+                it.initialize()
                 coroutineClass.addChild(it.ir)
             }
 
@@ -424,9 +405,10 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                 coroutineClass.addChild(it.ir)
             }
 
+            doResumeMethodBuilder.initialize()
             coroutineClass.addChild(doResumeMethodBuilder.ir)
 
-            coroutineClass.setSuperSymbolsAndAddFakeOverrides(superTypes)
+            coroutineClass.setSuperSymbolsAndAddFakeOverrides(superClasses)
 
             return BuiltCoroutine(
                     coroutineClass       = coroutineClass,
@@ -447,30 +429,21 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                     )
             )
 
-            private lateinit var constructorParameters: List<IrValueParameter>
-
             override fun doInitialize() {
                 val descriptor = symbol.descriptor as ClassConstructorDescriptorImpl
-                constructorParameters = (
+                val constructorParameters = (
                         functionParameters
-                        + coroutineImplConstructorSymbol.owner.valueParameters[0] // completion.
-                        ).mapIndexed { index, parameter ->
+                        + coroutineImplConstructorSymbol.descriptor.valueParameters[0] // completion.
+                        ).mapIndexed { index, parameter -> parameter.copyAsValueParameter(descriptor, index) }
 
-                    val parameterDescriptor = parameter.descriptor.copyAsValueParameter(descriptor, index)
-                    parameter.copy(parameterDescriptor)
-                }
-
-                descriptor.initialize(
-                        constructorParameters.map { it.descriptor as ValueParameterDescriptor },
-                        Visibilities.PUBLIC
-                )
+                descriptor.initialize(constructorParameters, Visibilities.PUBLIC)
                 descriptor.returnType = coroutineClassDescriptor.defaultType
             }
 
             override fun buildIr(): IrConstructor {
                 // Save all arguments to fields.
                 argumentToPropertiesMap = functionParameters.associate {
-                    it.descriptor to addField(it.name, it.type, false)
+                    it to buildPropertyWithBackingField(it.name, it.type, false)
                 }
 
                 val startOffset = irFunction.startOffset
@@ -481,32 +454,25 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                         origin      = DECLARATION_ORIGIN_COROUTINE_IMPL,
                         symbol      = symbol).apply {
 
-                    returnType  = coroutineClass.defaultType
-
-                    this.valueParameters += constructorParameters
+                    createParameterDeclarations()
 
                     val irBuilder = context.createIrBuilder(symbol, startOffset, endOffset)
                     body = irBuilder.irBlockBody {
                         val completionParameter = valueParameters.last()
                         +IrDelegatingConstructorCallImpl(startOffset, endOffset,
-                                context.irBuiltIns.unitType,
                                 coroutineImplConstructorSymbol, coroutineImplConstructorSymbol.descriptor).apply {
-                            putValueArgument(0, irGet(completionParameter))
+                            putValueArgument(0, irGet(completionParameter.symbol))
                         }
-                        +IrInstanceInitializerCallImpl(startOffset, endOffset, coroutineClass.symbol, context.irBuiltIns.unitType)
+                        +IrInstanceInitializerCallImpl(startOffset, endOffset, coroutineClass.symbol)
                         functionParameters.forEachIndexed { index, parameter ->
-                            +irSetField(
-                                    irGet(coroutineClassThis),
-                                    argumentToPropertiesMap[parameter.descriptor]!!,
-                                    irGet(valueParameters[index])
-                            )
+                            +irSetField(irGet(coroutineClassThis), argumentToPropertiesMap[parameter]!!, irGet(valueParameters[index].symbol))
                         }
                     }
                 }
             }
         }
 
-        private fun createFactoryConstructorBuilder(boundParams: List<IrValueParameter>)
+        private fun createFactoryConstructorBuilder(boundParams: List<ParameterDescriptor>)
                 = object : SymbolWithIrBuilder<IrConstructorSymbol, IrConstructor>() {
 
             override fun buildSymbol() = IrConstructorSymbolImpl(
@@ -518,18 +484,12 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                     )
             )
 
-            lateinit var constructorParameters: List<IrValueParameter>
-
             override fun doInitialize() {
                 val descriptor = symbol.descriptor as ClassConstructorDescriptorImpl
-                constructorParameters = boundParams.mapIndexed { index, parameter ->
-                    val parameterDescriptor = parameter.descriptor.copyAsValueParameter(descriptor, index)
-                    parameter.copy(parameterDescriptor)
+                val constructorParameters = boundParams.mapIndexed { index, parameter ->
+                    parameter.copyAsValueParameter(descriptor, index)
                 }
-                descriptor.initialize(
-                        constructorParameters.map { it.descriptor as ValueParameterDescriptor },
-                        Visibilities.PUBLIC
-                )
+                descriptor.initialize(constructorParameters, Visibilities.PUBLIC)
                 descriptor.returnType = coroutineClassDescriptor.defaultType
             }
 
@@ -542,32 +502,27 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                         origin      = DECLARATION_ORIGIN_COROUTINE_IMPL,
                         symbol      = symbol).apply {
 
-                    returnType = coroutineClass.defaultType
-
-                    this.valueParameters += constructorParameters
+                    createParameterDeclarations()
 
                     val irBuilder = context.createIrBuilder(symbol, startOffset, endOffset)
                     body = irBuilder.irBlockBody {
-                        +IrDelegatingConstructorCallImpl(startOffset, endOffset, context.irBuiltIns.unitType,
+                        +IrDelegatingConstructorCallImpl(startOffset, endOffset,
                                 coroutineImplConstructorSymbol, coroutineImplConstructorSymbol.descriptor).apply {
                             putValueArgument(0, irNull()) // Completion.
                         }
-                        +IrInstanceInitializerCallImpl(startOffset, endOffset, coroutineClass.symbol,
-                                context.irBuiltIns.unitType)
+                        +IrInstanceInitializerCallImpl(startOffset, endOffset, coroutineClass.symbol)
                         // Save all arguments to fields.
                         boundParams.forEachIndexed { index, parameter ->
-                            +irSetField(irGet(coroutineClassThis), argumentToPropertiesMap[parameter.descriptor]!!,
-                                    irGet(valueParameters[index]))
+                            +irSetField(irGet(coroutineClassThis), argumentToPropertiesMap[parameter]!!, irGet(valueParameters[index].symbol))
                         }
                     }
                 }
             }
         }
 
-        private fun createCreateMethodBuilder(unboundArgs: List<IrValueParameter>,
+        private fun createCreateMethodBuilder(unboundArgs: List<ParameterDescriptor>,
                                               superFunctionDescriptor: FunctionDescriptor?,
-                                              coroutineConstructor: IrConstructor,
-                                              coroutineClass: IrClass)
+                                              coroutineConstructorSymbol: IrConstructorSymbol)
                 = object: SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
 
             override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
@@ -580,21 +535,19 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                     )
             )
 
-            lateinit var parameters: List<IrValueParameter>
-
             override fun doInitialize() {
                 val descriptor = symbol.descriptor as SimpleFunctionDescriptorImpl
-                parameters = (
+                val valueParameters = (
                         unboundArgs + create1CompletionParameter
                         ).mapIndexed { index, parameter ->
-                    parameter.copy(parameter.descriptor.copyAsValueParameter(descriptor, index))
+                    parameter.copyAsValueParameter(descriptor, index)
                 }
 
                 descriptor.initialize(
                         /* receiverParameterType        = */ null,
                         /* dispatchReceiverParameter    = */ coroutineClassDescriptor.thisAsReceiverParameter,
                         /* typeParameters               = */ emptyList(),
-                        /* unsubstitutedValueParameters = */ parameters.map { it.descriptor as ValueParameterDescriptor },
+                        /* unsubstitutedValueParameters = */ valueParameters,
                         /* unsubstitutedReturnType      = */ coroutineClassDescriptor.defaultType,
                         /* modality                     = */ Modality.FINAL,
                         /* visibility                   = */ Visibilities.PRIVATE).apply {
@@ -614,29 +567,25 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                         origin      = DECLARATION_ORIGIN_COROUTINE_IMPL,
                         symbol      = symbol).apply {
 
-                    returnType  = coroutineClass.defaultType
-                    parent = coroutineClass
+                    createParameterDeclarations()
 
-                    this.valueParameters += parameters
-                    this.createDispatchReceiverParameter()
-
-                    val thisReceiver = this.dispatchReceiverParameter!!
+                    val thisReceiver = this.dispatchReceiverParameter!!.symbol
 
                     val irBuilder = context.createIrBuilder(symbol, startOffset, endOffset)
                     body = irBuilder.irBlockBody(startOffset, endOffset) {
                         +irReturn(
-                                irCall(coroutineConstructor).apply {
+                                irCall(coroutineConstructorSymbol).apply {
                                     var unboundIndex = 0
                                     val unboundArgsSet = unboundArgs.toSet()
                                     functionParameters.map {
                                         if (unboundArgsSet.contains(it))
-                                            irGet(valueParameters[unboundIndex++])
+                                            irGet(valueParameters[unboundIndex++].symbol)
                                         else
-                                            irGetField(irGet(thisReceiver), argumentToPropertiesMap[it.descriptor]!!)
+                                            irGetField(irGet(thisReceiver), argumentToPropertiesMap[it]!!)
                                     }.forEachIndexed { index, argument ->
                                         putValueArgument(index, argument)
                                     }
-                                    putValueArgument(functionParameters.size, irGet(valueParameters[unboundIndex]))
+                                    putValueArgument(functionParameters.size, irGet(valueParameters[unboundIndex].symbol))
                                     assert(unboundIndex == valueParameters.size - 1,
                                             { "Not all arguments of <create> are used" })
                                 })
@@ -647,9 +596,8 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
         private fun createInvokeMethodBuilder(suspendFunctionInvokeFunctionDescriptor: FunctionDescriptor,
                                               functionInvokeFunctionDescriptor: FunctionDescriptor,
-                                              createFunction: IrFunction,
-                                              doResumeFunction: IrFunction,
-                                              coroutineClass: IrClass)
+                                              createFunctionSymbol: IrFunctionSymbol,
+                                              doResumeFunctionSymbol: IrFunctionSymbol)
                 = object: SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
 
             override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
@@ -662,20 +610,18 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                     )
             )
 
-            lateinit var parameters: List<IrValueParameter>
-
             override fun doInitialize() {
                 val descriptor = symbol.descriptor as SimpleFunctionDescriptorImpl
-                parameters = createFunction.valueParameters
+                val valueParameters = createFunctionSymbol.descriptor.valueParameters
                         // Skip completion - invoke() already has it implicitly as a suspend function.
-                        .take(createFunction.valueParameters.size - 1)
-                        .map { it.copy(it.descriptor.copyAsValueParameter(descriptor, it.index)) }
+                        .take(createFunctionSymbol.descriptor.valueParameters.size - 1)
+                        .map { it.copyAsValueParameter(descriptor, it.index) }
 
                 descriptor.initialize(
                         /* receiverParameterType        = */ null,
                         /* dispatchReceiverParameter    = */ coroutineClassDescriptor.thisAsReceiverParameter,
                         /* typeParameters               = */ emptyList(),
-                        /* unsubstitutedValueParameters = */ parameters.map { it.descriptor as ValueParameterDescriptor },
+                        /* unsubstitutedValueParameters = */ valueParameters,
                         /* unsubstitutedReturnType      = */ irFunction.descriptor.returnType,
                         /* modality                     = */ Modality.FINAL,
                         /* visibility                   = */ Visibilities.PRIVATE).apply {
@@ -694,27 +640,23 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                         origin      = DECLARATION_ORIGIN_COROUTINE_IMPL,
                         symbol      = symbol).apply {
 
-                    returnType  = irFunction.returnType
-                    parent = coroutineClass
+                    createParameterDeclarations()
 
-                    valueParameters += parameters
-                    this.createDispatchReceiverParameter()
-
-                    val thisReceiver = this.dispatchReceiverParameter!!
+                    val thisReceiver = this.dispatchReceiverParameter!!.symbol
 
                     val irBuilder = context.createIrBuilder(symbol, startOffset, endOffset)
                     body = irBuilder.irBlockBody(startOffset, endOffset) {
                         +irReturn(
-                                irCall(doResumeFunction).apply {
-                                    dispatchReceiver = irCall(createFunction).apply {
+                                irCall(doResumeFunctionSymbol).apply {
+                                    dispatchReceiver = irCall(createFunctionSymbol).apply {
                                         dispatchReceiver = irGet(thisReceiver)
                                         valueParameters.forEachIndexed { index, parameter ->
-                                            putValueArgument(index, irGet(parameter))
+                                            putValueArgument(index, irGet(parameter.symbol))
                                         }
                                         putValueArgument(valueParameters.size,
-                                                irCall(getContinuationSymbol, getContinuationSymbol.owner.returnType, listOf(returnType)))
+                                                irCall(getContinuationSymbol, listOf(symbol.descriptor.returnType!!)))
                                     }
-                                    putValueArgument(0, irGetObject(symbols.unit))       // value
+                                    putValueArgument(0, irGetObject(unit))       // value
                                     putValueArgument(1, irNull())       // exception
                                 }
                         )
@@ -723,23 +665,27 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             }
         }
 
-        private fun addField(name: Name, type: IrType, isMutable: Boolean): IrField = createField(
-                irFunction.startOffset,
-                irFunction.endOffset,
-                type,
-                name,
-                isMutable,
-                DECLARATION_ORIGIN_COROUTINE_IMPL,
-                coroutineClassDescriptor
-        ).also {
-            coroutineClass.addChild(it)
+        private fun buildPropertyWithBackingField(name: Name, type: KotlinType, isMutable: Boolean): IrFieldSymbol {
+            val propertyBuilder = context.createPropertyWithBackingFieldBuilder(
+                    startOffset = irFunction.startOffset,
+                    endOffset   = irFunction.endOffset,
+                    origin      = DECLARATION_ORIGIN_COROUTINE_IMPL,
+                    owner       = coroutineClassDescriptor,
+                    name        = name,
+                    type        = type,
+                    isMutable   = isMutable).apply {
+                initialize()
+            }
+
+            coroutineClass.addChild(propertyBuilder.ir)
+            return propertyBuilder.symbol
         }
 
-        private fun createDoResumeMethodBuilder(doResumeFunction: IrFunction, coroutineClass: IrClass)
+        private fun createDoResumeMethodBuilder(doResumeFunctionDescriptor: FunctionDescriptor)
                 = object: SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
 
             override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
-                    doResumeFunction.descriptor.createOverriddenDescriptor(coroutineClassDescriptor)
+                    doResumeFunctionDescriptor.createOverriddenDescriptor(coroutineClassDescriptor)
             )
 
             override fun doInitialize() { }
@@ -749,48 +695,42 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                 val startOffset = irFunction.startOffset
                 val endOffset = irFunction.endOffset
                 val function = IrFunctionImpl(
-                        startOffset = startOffset,
-                        endOffset   = endOffset,
-                        origin      = DECLARATION_ORIGIN_COROUTINE_IMPL,
-                        symbol      = symbol).apply {
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    origin = DECLARATION_ORIGIN_COROUTINE_IMPL,
+                    symbol = symbol
+                ).apply {
 
-                    returnType  = context.irBuiltIns.anyNType
-                    parent = coroutineClass
-
-                    this.createDispatchReceiverParameter()
-
-                    doResumeFunction.valueParameters.mapIndexedTo(this.valueParameters) { index, it ->
-                        it.copy(descriptor.valueParameters[index])
-                    }
+                    createParameterDeclarations()
 
                 }
 
-                dataArgument = function.valueParameters[0]
-                exceptionArgument = function.valueParameters[1]
-                suspendResult = JsIrBuilder.buildVar(IrVariableSymbolImpl(
+                dataArgument = function.valueParameters[0].symbol
+                exceptionArgument = function.valueParameters[1].symbol
+                suspendResult = IrVariableSymbolImpl(
                     IrTemporaryVariableDescriptorImpl(
                         containingDeclaration = irFunction.descriptor,
                         name = "suspendResult".synthesizedName,
                         outType = context.builtIns.nullableAnyType,
                         isMutable = true
                     )
-                ), type = context.irBuiltIns.anyNType)
-                suspendState = JsIrBuilder.buildVar(IrVariableSymbolImpl(
+                )
+                suspendState = IrVariableSymbolImpl(
                     IrTemporaryVariableDescriptorImpl(
                         containingDeclaration = irFunction.descriptor,
                         name = "suspendState".synthesizedName,
-                        outType = coroutineImplLabelFieldSymbol.owner.type.toKotlinType(),
+                        outType = coroutineImplLabelFieldSymbol.owner.type,
                         isMutable = true
                     )
-                ), type = coroutineImplLabelFieldSymbol.owner.type)
+                )
 
                 val body =
                     (originalBody as IrBlockBody).run {
                         IrBlockImpl(
                             startOffset,
                             endOffset,
-                            context.irBuiltIns.unitType,
-                            SuspendFunctionsLowering.STATEMENT_ORIGIN_COROUTINE_IMPL,
+                            context.builtIns.unitType,
+                            STATEMENT_ORIGIN_COROUTINE_IMPL,
                             statements
                         )
                     }
@@ -804,7 +744,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
         private fun buildStateMachine(body: IrBlock, function: IrFunction) {
             body.transformChildrenVoid(SuspendPointTransformer())
 
-            val unit = context.irBuiltIns.unitType
+            val unit = context.builtIns.unitType
 
             val switch = IrWhenImpl(body.startOffset, body.endOffset, unit, COROUTINE_SWITCH)
             val rootTry = IrTryImpl(body.startOffset, body.endOffset, unit).apply {
@@ -816,7 +756,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
                 unit,
                 COROUTINE_ROOT_LOOP,
                 rootTry,
-                JsIrBuilder.buildBoolean(context.irBuiltIns.booleanType, true)
+                JsIrBuilder.buildBoolean(context.builtIns.booleanType, true)
             )
 
             val suspendableNodes = collectSuspendableNodes(body)
@@ -848,7 +788,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
             fun buildDispatch(target: SuspendState) = target.run {
                 assert(id >= 0)
-                JsIrBuilder.buildInt(context.irBuiltIns.intType, id)
+                JsIrBuilder.buildInt(context.builtIns.intType, id)
             }
 
             val eqeqeqInt = context.irBuiltIns.eqeqeqSymbol
@@ -856,13 +796,13 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             for (state in sortedStates) {
                 val condition = JsIrBuilder.buildCall(eqeqeqInt).apply {
                     putValueArgument(0, JsIrBuilder.buildGetField(coroutineImplLabelFieldSymbol, JsIrBuilder.buildGetValue(thisReceiver)))
-                    putValueArgument(1, JsIrBuilder.buildInt(context.irBuiltIns.intType, state.id))
+                    putValueArgument(1, JsIrBuilder.buildInt(context.builtIns.intType, state.id))
                 }
 
                 switch.branches += IrBranchImpl(state.entryBlock.startOffset, state.entryBlock.endOffset, condition, state.entryBlock)
             }
 
-            val irResultDeclaration = JsIrBuilder.buildVar(suspendResult.symbol, JsIrBuilder.buildGetValue(dataArgument.symbol), suspendResult.type)
+            val irResultDeclaration = JsIrBuilder.buildVar(suspendResult, JsIrBuilder.buildGetValue(dataArgument))
 //            val irStateDeclaration = JsIrBuilder.buildVar(suspendState, JsIrBuilder.buildGetField(coroutineImplLabelFieldSymbol, JsIrBuilder.buildGetValue(thisReceiver)))
 //            val irSaveException = JsIrBuilder.buildSetField(
 //                coroutineImplExceptionFieldSymbol,
@@ -876,9 +816,9 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
             for (it in coroutineConstructors) {
                 (it.body as? IrBlockBody)?.run {
-                    val receiver = JsIrBuilder.buildGetValue(coroutineClassThis.symbol)
-                    val id = JsIrBuilder.buildInt(context.irBuiltIns.intType, stateMachineBuilder.rootExceptionTrap.id)
-                    statements += JsIrBuilder.buildSetField(coroutineImplExceptionStateFieldSymbol, receiver, id, id.type)
+                    val receiver = JsIrBuilder.buildGetValue(coroutineClassThis)
+                    val id = JsIrBuilder.buildInt(context.builtIns.intType, stateMachineBuilder.rootExceptionTrap.id)
+                    statements += JsIrBuilder.buildSetField(coroutineImplExceptionStateFieldSymbol, receiver, id)
                 }
             }
 
@@ -886,15 +826,20 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
             function.body = functionBody
 
+
             val liveLocals = computeLivenessAtSuspensionPoints(functionBody).values.flatten().toSet()
 
-            val localToPropertyMap = mutableMapOf<IrValueDeclaration, IrField>()
+            val localToPropertyMap = mutableMapOf<IrValueSymbol, IrFieldSymbol>()
             var localCounter = 0
             // TODO: optimize by using the same property for different locals.
             liveLocals.forEach {
                 if (it != suspendState && it != suspendResult) {
                     localToPropertyMap.getOrPut(it) {
-                        addField(Name.identifier("${it.name}${localCounter++}"), it.type, (it as? IrVariable)?.isVar ?: false)
+                        buildPropertyWithBackingField(
+                            Name.identifier("${it.descriptor.name}${localCounter++}"),
+                            it.descriptor.type,
+                            it.descriptor.isVar
+                        )
                     }
                 }
             }
@@ -907,16 +852,16 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
             function.transform(LiveLocalsTransformer(localToPropertyMap, JsIrBuilder.buildGetValue(thisReceiver)), null)
         }
 
-        private fun computeLivenessAtSuspensionPoints(body: IrBody): Map<IrCall, List<IrValueDeclaration>> {
+        private fun computeLivenessAtSuspensionPoints(body: IrBody): Map<IrCall, List<IrVariableSymbol>> {
             // TODO: data flow analysis.
             // Just save all visible for now.
-            val result = mutableMapOf<IrCall, List<IrValueDeclaration>>()
-            body.acceptChildrenVoid(object : SuspendFunctionsLowering.VariablesScopeTracker() {
+            val result = mutableMapOf<IrCall, List<IrVariableSymbol>>()
+            body.acceptChildrenVoid(object : VariablesScopeTracker() {
                 override fun visitCall(expression: IrCall) {
                     if (!expression.descriptor.isSuspend) return super.visitCall(expression)
 
                     expression.acceptChildrenVoid(this)
-                    val visibleVariables = mutableListOf<IrValueDeclaration>()
+                    val visibleVariables = mutableListOf<IrVariableSymbol>()
                     scopeStack.forEach { visibleVariables += it }
                     result.put(expression, visibleVariables)
                 }
@@ -928,7 +873,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
     private open class VariablesScopeTracker: IrElementVisitorVoid {
 
-        protected val scopeStack = mutableListOf<MutableSet<IrVariable>>(mutableSetOf())
+        protected val scopeStack = mutableListOf<MutableSet<IrVariableSymbol>>(mutableSetOf())
 
         override fun visitElement(element: IrElement) {
             element.acceptChildrenVoid(this)
@@ -950,7 +895,7 @@ internal class SuspendFunctionsLowering(val context: JsIrBackendContext): FileLo
 
         override fun visitVariable(declaration: IrVariable) {
             super.visitVariable(declaration)
-            scopeStack.peek()!!.add(declaration)
+            scopeStack.peek()!!.add(declaration.symbol)
         }
     }
 }

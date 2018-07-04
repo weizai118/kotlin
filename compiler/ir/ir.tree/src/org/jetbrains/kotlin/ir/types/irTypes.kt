@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.ClassifierDescriptor
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
 import org.jetbrains.kotlin.ir.declarations.IrClass
+import org.jetbrains.kotlin.ir.declarations.IrTypeParameter
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrClassifierSymbol
 import org.jetbrains.kotlin.ir.symbols.impl.IrClassSymbolImpl
@@ -107,6 +108,20 @@ fun ClassifierDescriptor.toIrType(hasQuestionMark: Boolean = false): IrType {
     val symbol = getSymbol()
     return IrSimpleTypeImpl(defaultType, symbol, hasQuestionMark, listOf(), listOf())
 }
+
+val IrTypeParameter.defaultType: IrType get() = symbol.owner.defaultType
+
+fun IrClassifierSymbol.typeWith(vararg arguments: IrType): IrSimpleType = typeWith(arguments.toList())
+
+fun IrClassifierSymbol.typeWith(arguments: List<IrType>): IrSimpleType =
+    IrSimpleTypeImpl(
+        this,
+        false,
+        arguments.map { makeTypeProjection(it, Variance.INVARIANT) },
+        emptyList()
+    )
+
+fun IrClass.typeWith(arguments: List<IrType>) = this.symbol.typeWith(arguments)
 
 fun KotlinType.toIrType(): IrType? {
     if (isDynamic()) return IrDynamicTypeImpl(this, listOf(), Variance.INVARIANT)
