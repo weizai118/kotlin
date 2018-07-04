@@ -66,17 +66,17 @@ class JsIrBackendContext(
 
     private val operatorMap = referenceOperators()
 
-    val functions = (0..22).map { symbolTable.referenceClass(getClass(FqName("kotlin.Function$it"))) }
-//    val functions = (0..22).map { symbolTable.referenceClass(builtIns.getFunction(it)) }
+//    val functions = (0..22).map { symbolTable.referenceClass(getClass(FqName("kotlin.Function$it"))) }
+    val functions = (0..22).map { symbolTable.referenceClass(builtIns.getFunction(it)) }
 
     val kFunctions by lazy {
         (0..22).map { symbolTable.referenceClass(reflectionTypes.getKFunction(it)) }
     }
 
-    val suspendFunctions by lazy {
-        (0..22).map { symbolTable.referenceClass(getClass(FqName("kotlin.SuspendFunction$it"))) }
-    }
-//    val suspendFunctions = (0..22).map { symbolTable.referenceClass(builtIns.getSuspendFunction(it)) }
+//    val suspendFunctions by lazy {
+//        (0..22).map { symbolTable.referenceClass(getClass(FqName("kotlin.SuspendFunction$it"))) }
+//    }
+    val suspendFunctions = (0..22).map { symbolTable.referenceClass(builtIns.getSuspendFunction(it)) }
 
 
     fun getOperatorByName(name: Name, type: KotlinType) = operatorMap[name]?.get(type)
