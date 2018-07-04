@@ -21,6 +21,7 @@ import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.declarations.impl.IrValueParameterImpl
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.IrCallImpl
+import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrValueParameterSymbol
 import org.jetbrains.kotlin.ir.symbols.IrValueSymbol
@@ -63,7 +64,9 @@ class CallableReferenceLowering(val context: JsIrBackendContext) {
 
     fun getReferenceReplacer() = object : FileLoweringPass {
         private val replacer = CallableReferenceTransformer()
-        override fun lower(irFile: IrFile) = irFile.transformChildrenVoid(replacer)
+        override fun lower(irFile: IrFile) {
+            irFile.transformChildrenVoid(replacer)
+        }
     }::lower
 
     private fun makeCallableKey(declaration: IrFunction, reference: IrCallableReference) =
@@ -86,33 +89,33 @@ class CallableReferenceLowering(val context: JsIrBackendContext) {
 
     private fun buildClosures(irFile: IrFile) {
 
-        val declarationsSet = mutableSetOf<CallableDescriptor>()
+        val declarationsSet = mutableSetOf<IrFunctionSymbol>()
         irFile.acceptVoid(object : IrElementVisitorVoid {
             override fun visitElement(element: IrElement) = element.acceptChildrenVoid(this)
 
             override fun visitFunction(declaration: IrFunction) {
                 super.visitFunction(declaration)
-                declarationsSet += declaration.descriptor
+                declarationsSet += declaration.symbol
             }
 
-            override fun visitField(declaration: IrField) {
-                super.visitField(declaration)
-                declarationsSet += declaration.descriptor
-            }
+//            override fun visitField(declaration: IrField) {
+//                super.visitField(declaration)
+//                declarationsSet += declaration.descriptor
+//            }
         })
 
 
         for (v in collectedReferenceMap.values) {
-            if (v.descriptor in declarationsSet) {
+//            if (v.descriptor in declarationsSet) {
                 newDeclarations += v.accept(object : IrElementVisitor<List<IrDeclaration>, Nothing?> {
                     override fun visitElement(element: IrElement, data: Nothing?) = error("Unreachable execution")
                     override fun visitFunctionReference(expression: IrFunctionReference, data: Nothing?) =
-                        lowerKFunctionReference(expression.symbol.owner, expression)
+                        if (expression.symbol in declarationsSet) lowerKFunctionReference(expression.symbol.owner, expression) else emptyList()
 
                     override fun visitPropertyReference(expression: IrPropertyReference, data: Nothing?) =
-                        lowerKPropertyReference(expression.getter!!.owner, expression)
+                        if (expression.getter in declarationsSet) lowerKPropertyReference(expression.getter!!.owner, expression) else emptyList()
                 }, null)
-            }
+//            }
         }
     }
 
