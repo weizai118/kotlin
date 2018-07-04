@@ -17,6 +17,7 @@ fun box(): String {
     var result = "fail 1"
 
     builder {
+        var moveSlot = ""
         // Initialize var with Int value
         try {
             var i: String = "abc"
@@ -41,10 +42,11 @@ fun box(): String {
     return result
 }
 
-// 1 LOCALVARIABLE i Ljava/lang/String; L.* 2
-// 1 LOCALVARIABLE s Ljava/lang/String; L.* 2
+// 1 LOCALVARIABLE i Ljava/lang/String; L.* 3
+// 1 LOCALVARIABLE s Ljava/lang/String; L.* 3
 // 1 PUTFIELD VarValueConflictsWithTableSameSortKt\$box\$1.L\$0 : Ljava/lang/Object;
 /* 1 load in try/finally */
 /* 1 load in result = s */
 /* 1 load before suspension point */
-// 3 ALOAD 3
+/* 1 load in helpers/CoroutineUtilKt$handleExceptionContinuation$1 */
+// 4 ALOAD 3
