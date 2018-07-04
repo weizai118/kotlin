@@ -19,8 +19,9 @@ package org.jetbrains.kotlin.idea.quickfix
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.util.PsiTreeUtil
-import org.jetbrains.kotlin.builtins.*
+import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.builtins.functions.FunctionClassDescriptor
+import org.jetbrains.kotlin.builtins.getFunctionalClassKind
 import org.jetbrains.kotlin.diagnostics.Diagnostic
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.diagnostics.rendering.DefaultErrorMessages
@@ -44,6 +45,7 @@ import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.KotlinTypeFactory
 import org.jetbrains.kotlin.types.typeUtil.*
+import org.jetbrains.kotlin.utils.addIfNotNull
 import java.util.*
 
 //TODO: should use change signature to deal with cases of multiple overridden descriptors
@@ -121,6 +123,9 @@ class QuickFixFactoryForTypeMismatchError : KotlinIntentionActionsFactory() {
             } as? KtClassOrObject
             expressionTypeDeclaration?.let { actions.add(LetImplementInterfaceFix(it, expectedType, expressionType)) }
         }
+
+
+        actions.addIfNotNull(WrapWithCollectionLiteralCallFix.create(expectedType, expressionType, diagnosticElement))
 
         ConvertCollectionFix.getConversionTypeOrNull(expressionType, expectedType)?.let {
             actions.add(ConvertCollectionFix(diagnosticElement, it))
